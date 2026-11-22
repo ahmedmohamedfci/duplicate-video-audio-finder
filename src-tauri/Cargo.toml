@@ -1,6 +1,6 @@
 [package]
 name = "dupfinder"
-version = "0.1.0"
+version = "0.1.1"
 description = "Duplicate video/audio finder"
 authors = ["you"]
 edition = "2021"

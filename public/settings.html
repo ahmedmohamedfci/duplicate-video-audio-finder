@@ -1,0 +1,309 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Duplicate Finder — Settings</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div class="app">
+    <header class="topbar">
+      <nav class="nav-chips" aria-label="Settings sections">
+        <a href="#scan" class="chip active">Scan</a>
+        <a href="#roots" class="chip">Roots</a>
+        <a href="#extensions" class="chip">Extensions</a>
+        <a href="#match" class="chip">Match</a>
+        <a href="#data" class="chip">Data</a>
+      </nav>
+      <div class="row gap">
+        <span id="job-pill" class="pill">idle</span>
+        <a class="btn btn-ghost" href="groups.html">Back to groups</a>
+      </div>
+    </header>
+
+    <main class="settings">
+      <section class="panel" id="scan">
+        <button type="button" class="section-toggle" aria-expanded="true">
+          <span>Scan</span>
+          <span class="muted" id="scan-summary">—</span>
+        </button>
+        <div class="section-body">
+          <div class="row gap">
+            <button type="button" class="btn btn-primary" id="btn-save-scan">Save &amp; scan</button>
+            <button type="button" class="btn btn-ghost" id="btn-cancel" disabled>Cancel job</button>
+          </div>
+          <p class="status-line" id="scan-status">Idle — UI stays responsive while jobs run.</p>
+          <div class="progress"><div class="progress-bar" id="scan-bar" style="width: 0%"></div></div>
+        </div>
+      </section>
+
+      <section class="panel" id="roots">
+        <button type="button" class="section-toggle" aria-expanded="true">
+          <span>Roots</span>
+          <span class="muted" id="roots-count">0 folders</span>
+        </button>
+        <div class="section-body">
+          <ul class="path-list" id="roots-list"></ul>
+          <div class="row gap">
+            <input id="root-input" type="text" placeholder="D:\media\archives" style="flex:1" />
+            <button type="button" class="btn btn-secondary" id="btn-add-root">Add folder</button>
+          </div>
+          <p class="muted small">Paste a full folder path (browser cannot pick local folders without Tauri).</p>
+        </div>
+      </section>
+
+      <section class="panel" id="extensions">
+        <button type="button" class="section-toggle" aria-expanded="true">
+          <span>Extensions</span>
+          <span class="muted">one per line</span>
+        </button>
+        <div class="section-body">
+          <label class="field-label" for="exts">Include these extensions</label>
+          <textarea id="exts" rows="10" spellcheck="false"></textarea>
+        </div>
+      </section>
+
+      <section class="panel" id="match">
+        <button type="button" class="section-toggle" aria-expanded="true">
+          <span>Fingerprint &amp; match</span>
+          <span class="muted">middle 60% · ≥3 min</span>
+        </button>
+        <div class="section-body">
+          <div class="grid-2">
+            <label class="field">
+              <span>Workers</span>
+              <input type="number" id="workers" value="4" min="1" max="8" />
+            </label>
+            <label class="field">
+              <span>Min duration (sec)</span>
+              <input type="number" id="min_duration_sec" value="180" min="60" />
+            </label>
+            <label class="field">
+              <span>Min match confidence %</span>
+              <input type="number" id="min_confidence" value="85" min="50" max="100" />
+            </label>
+            <label class="field">
+              <span>Middle window</span>
+              <input type="text" id="middle_window" value="20% → 80%" disabled />
+            </label>
+          </div>
+          <div class="row gap" style="margin-top: 12px">
+            <button type="button" class="btn btn-primary" id="btn-fingerprint">Run fingerprint</button>
+            <button type="button" class="btn btn-secondary" id="btn-match">Find duplicates</button>
+          </div>
+          <p class="status-line" id="fp-status">Fingerprints only the middle 60% (skips intro/outro).</p>
+          <div class="progress"><div class="progress-bar" id="fp-bar" style="width: 0%"></div></div>
+          <p class="muted small" id="tools-status">Checking tools…</p>
+        </div>
+      </section>
+
+      <section class="panel" id="data">
+        <button type="button" class="section-toggle" aria-expanded="true">
+          <span>Data &amp; settings</span>
+          <span class="muted">trash path</span>
+        </button>
+        <div class="section-body">
+          <label class="field">
+            <span>Soft-delete trash folder</span>
+            <input type="text" id="trash_dir" />
+          </label>
+          <p class="muted small" id="stats-line" style="margin-top: 12px">—</p>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <script type="module">
+    import { api, watchJob, pct, formatBytes } from "./api.js";
+
+    const state = {
+      roots: [],
+      currentJobId: null,
+      stopWatch: null,
+    };
+
+    const $ = (id) => document.getElementById(id);
+
+    document.querySelectorAll(".section-toggle").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const body = btn.nextElementSibling;
+        const open = btn.getAttribute("aria-expanded") === "true";
+        btn.setAttribute("aria-expanded", String(!open));
+        body.classList.toggle("hidden", open);
+      });
+    });
+
+    function renderRoots() {
+      $("roots-count").textContent = `${state.roots.length} folders`;
+      $("roots-list").innerHTML = state.roots
+        .map(
+          (r, i) => `
+        <li>
+          <code>${escapeHtml(r)}</code>
+          <button type="button" class="icon-btn danger" data-i="${i}" title="Remove">×</button>
+        </li>`
+        )
+        .join("");
+    }
+
+    function escapeHtml(s) {
+      return String(s)
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;");
+    }
+
+    $("roots-list").addEventListener("click", (e) => {
+      const btn = e.target.closest("[data-i]");
+      if (!btn) return;
+      state.roots.splice(Number(btn.dataset.i), 1);
+      renderRoots();
+    });
+
+    $("btn-add-root").addEventListener("click", () => {
+      const v = $("root-input").value.trim();
+      if (!v) return;
+      if (!state.roots.includes(v)) state.roots.push(v);
+      $("root-input").value = "";
+      renderRoots();
+    });
+
+    async function saveSettings() {
+      const extensions = $("exts")
+        .value.split(/\r?\n/)
+        .map((l) => l.trim())
+        .filter(Boolean);
+      return api("/settings", {
+        method: "PUT",
+        body: JSON.stringify({
+          roots: state.roots,
+          extensions,
+          workers: Number($("workers").value),
+          min_duration_sec: Number($("min_duration_sec").value),
+          min_confidence: Number($("min_confidence").value),
+          trash_dir: $("trash_dir").value.trim(),
+        }),
+      });
+    }
+
+    function uiForJobType(type) {
+      if (type === "scan") {
+        return { statusEl: $("scan-status"), barEl: $("scan-bar") };
+      }
+      // fingerprint, match (and anything else progress-like)
+      return { statusEl: $("fp-status"), barEl: $("fp-bar") };
+    }
+
+    function bindJobUi(statusEl, barEl) {
+      return (job) => {
+        const live = ["queued", "running"].includes(job.status);
+        if (live) state.currentJobId = job.id;
+        else if (state.currentJobId === job.id) state.currentJobId = null;
+        $("btn-cancel").disabled = !state.currentJobId;
+        $("job-pill").textContent = `${job.type}: ${job.status} ${pct(job.progress)}`;
+        statusEl.textContent = job.error
+          ? `Error: ${job.error}`
+          : `${job.message || job.status} · ${job.done}/${job.total || "?"} · ${pct(job.progress)}`;
+        barEl.style.width = pct(job.progress);
+      };
+    }
+
+    function attachJob(job) {
+      const { statusEl, barEl } = uiForJobType(job.type);
+      const onUpdate = bindJobUi(statusEl, barEl);
+      onUpdate(job);
+      if (!["queued", "running"].includes(job.status)) return;
+      state.stopWatch?.();
+      state.stopWatch = watchJob(job.id, {
+        onUpdate,
+        onDone: async (j) => {
+          onUpdate(j);
+          await refreshStats();
+        },
+        onError: onUpdate,
+      });
+    }
+
+    async function resumeActiveJobs() {
+      const jobs = await api("/jobs");
+      const active = jobs.filter((j) =>
+        ["queued", "running"].includes(j.status)
+      );
+
+      // Reconnect live job (prefer fingerprint/match for the shared slider)
+      const preferred =
+        active.find((j) => j.type === "fingerprint") ||
+        active.find((j) => j.type === "match") ||
+        active.find((j) => j.type === "scan") ||
+        active[0];
+      if (preferred) attachJob(preferred);
+
+      // Also restore the other panel from latest known job if not the live one
+      const lastScan = jobs.find((j) => j.type === "scan");
+      const lastFp = jobs.find((j) =>
+        ["fingerprint", "match"].includes(j.type)
+      );
+      if (lastScan && preferred?.type !== "scan") {
+        bindJobUi($("scan-status"), $("scan-bar"))(lastScan);
+      }
+      if (lastFp && !["fingerprint", "match"].includes(preferred?.type)) {
+        bindJobUi($("fp-status"), $("fp-bar"))(lastFp);
+      }
+    }
+
+    async function startBackground(path, statusEl, barEl) {
+      await saveSettings();
+      const job = await api(path, { method: "POST" });
+      attachJob(job);
+    }
+
+    $("btn-save-scan").addEventListener("click", () =>
+      startBackground("/jobs/scan", $("scan-status"), $("scan-bar")).catch(showErr)
+    );
+    $("btn-fingerprint").addEventListener("click", () =>
+      startBackground("/jobs/fingerprint", $("fp-status"), $("fp-bar")).catch(showErr)
+    );
+    $("btn-match").addEventListener("click", () =>
+      startBackground("/jobs/match", $("fp-status"), $("fp-bar")).catch(showErr)
+    );
+
+    $("btn-cancel").addEventListener("click", async () => {
+      if (!state.currentJobId) return;
+      await api(`/jobs/${state.currentJobId}/cancel`, { method: "POST" });
+    });
+
+    function showErr(err) {
+      alert(err.message || String(err));
+    }
+
+    async function refreshStats() {
+      const stats = await api("/stats");
+      $("scan-summary").textContent = `${stats.files} files`;
+      $("stats-line").textContent =
+        `files ${stats.files} · fingerprinted ${stats.fingerprinted} · groups ${stats.groups} · queued deletes ${stats.queuedDeletes} (${formatBytes(stats.queuedBytes)})`;
+    }
+
+    async function init() {
+      const [settings, health] = await Promise.all([
+        api("/settings"),
+        api("/health"),
+      ]);
+      state.roots = settings.roots || [];
+      renderRoots();
+      $("exts").value = (settings.extensions || []).join("\n");
+      $("workers").value = settings.workers ?? 4;
+      $("min_duration_sec").value = settings.min_duration_sec ?? 180;
+      $("min_confidence").value = settings.min_confidence ?? 85;
+      $("trash_dir").value = settings.trash_dir || "";
+      $("tools-status").textContent = health.tools?.ok
+        ? "Tools OK: ffmpeg, ffprobe, fpcalc"
+        : `Missing: ${(health.tools?.missing || []).join(", ")}`;
+      await refreshStats();
+      await resumeActiveJobs();
+    }
+
+    init().catch(showErr);
+  </script>
+</body>
+</html>

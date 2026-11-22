@@ -1,0 +1,17 @@
+{
+  "name": "duplicate-video-audio-finder",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Find near-duplicate video/audio files by middle-segment audio fingerprints",
+  "type": "module",
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "node --watch src/server.js"
+  },
+  "engines": {
+    "node": ">=22.5"
+  },
+  "dependencies": {
+    "express": "^4.21.2"
+  }
+}

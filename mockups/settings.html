@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Duplicate Finder — Settings</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div class="app">
+    <header class="topbar">
+      <nav class="nav-chips" aria-label="Settings sections">
+        <a href="#scan" class="chip active">Scan</a>
+        <a href="#roots" class="chip">Roots</a>
+        <a href="#extensions" class="chip">Extensions</a>
+        <a href="#match" class="chip">Match</a>
+        <a href="#data" class="chip">Data</a>
+      </nav>
+      <a class="btn btn-ghost" href="groups.html">Back to groups</a>
+    </header>
+
+    <main class="settings">
+      <section class="panel" id="scan">
+        <button type="button" class="section-toggle" aria-expanded="true">
+          <span>Scan</span>
+          <span class="muted">done · 847,210 files</span>
+        </button>
+        <div class="section-body">
+          <div class="row gap">
+            <button type="button" class="btn btn-primary">Save &amp; scan</button>
+            <label class="check">
+              <input type="checkbox" checked />
+              Deep scan (catch renames)
+            </label>
+          </div>
+          <p class="status-line">
+            scanned 12 roots · skipped 0 · files 847,210
+            <span class="ok">DB updated</span>
+          </p>
+          <div class="progress">
+            <div class="progress-bar" style="width: 100%"></div>
+          </div>
+          <p class="muted small">Last scan: today 14:02 · ~18 min</p>
+        </div>
+      </section>
+
+      <section class="panel" id="roots">
+        <button type="button" class="section-toggle" aria-expanded="true">
+          <span>Roots</span>
+          <span class="muted">3 folders</span>
+        </button>
+        <div class="section-body">
+          <ul class="path-list">
+            <li>
+              <code>D:\media\archives</code>
+              <button type="button" class="icon-btn danger" title="Remove">×</button>
+            </li>
+            <li>
+              <code>D:\media\downloads</code>
+              <button type="button" class="icon-btn danger" title="Remove">×</button>
+            </li>
+            <li>
+              <code>E:\backup\videos</code>
+              <button type="button" class="icon-btn danger" title="Remove">×</button>
+            </li>
+          </ul>
+          <button type="button" class="btn btn-secondary">Add folder…</button>
+        </div>
+      </section>
+
+      <section class="panel" id="extensions">
+        <button type="button" class="section-toggle" aria-expanded="true">
+          <span>Extensions</span>
+          <span class="muted">one per line</span>
+        </button>
+        <div class="section-body">
+          <label class="field-label" for="exts">Include these extensions</label>
+          <textarea id="exts" rows="8" spellcheck="false">.mp4
+.mkv
+.avi
+.mov
+.wmv
+.webm
+.mp3
+.m4a
+.aac
+.flac
+.wav
+.ogg
+.opus</textarea>
+        </div>
+      </section>
+
+      <section class="panel" id="match">
+        <button type="button" class="section-toggle" aria-expanded="true">
+          <span>Fingerprint &amp; match</span>
+          <span class="muted">in progress</span>
+        </button>
+        <div class="section-body">
+          <div class="grid-2">
+            <label class="field">
+              <span>Workers</span>
+              <input type="number" value="4" min="1" max="8" />
+            </label>
+            <label class="field">
+              <span>Max intro/outro offset (sec)</span>
+              <input type="number" value="30" min="0" max="120" />
+            </label>
+            <label class="field">
+              <span>Min match confidence %</span>
+              <input type="number" value="85" min="50" max="100" />
+            </label>
+            <label class="field">
+              <span>Min overlap (sec)</span>
+              <input type="number" value="8" min="2" max="60" />
+            </label>
+          </div>
+          <div class="row gap" style="margin-top: 12px">
+            <button type="button" class="btn btn-primary">Run fingerprint</button>
+            <button type="button" class="btn btn-secondary">Find duplicates</button>
+          </div>
+          <p class="status-line">
+            fingerprinted <strong>412,880</strong> / 847,210 · ETA ~2.1 h
+          </p>
+          <div class="progress">
+            <div class="progress-bar" style="width: 49%"></div>
+          </div>
+          <p class="muted small">
+            Matching uses audio only. Same soundtrack with different video quality still matches.
+            Offset up to 30s covers website intros/outros.
+          </p>
+        </div>
+      </section>
+
+      <section class="panel" id="data">
+        <button type="button" class="section-toggle" aria-expanded="false">
+          <span>Data &amp; settings</span>
+          <span class="muted">collapsed</span>
+        </button>
+        <div class="section-body hidden">
+          <p class="muted">DB path, clear fingerprints, export CSV — placeholder for later.</p>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <script>
+    document.querySelectorAll(".section-toggle").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const body = btn.nextElementSibling;
+        const open = btn.getAttribute("aria-expanded") === "true";
+        btn.setAttribute("aria-expanded", String(!open));
+        body.classList.toggle("hidden", open);
+      });
+    });
+  </script>
+</body>
+</html>

@@ -1,0 +1,365 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Duplicate Finder — Groups</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div class="app groups-layout">
+    <header class="topbar">
+      <div class="top-meta">
+        <span class="eyebrow">Groups</span>
+        <strong id="group-count">0</strong>
+        <span class="muted" id="group-meta">unreviewed</span>
+        <span id="job-pill" class="pill">idle</span>
+      </div>
+      <div class="row gap">
+        <a class="btn btn-ghost" href="settings.html">Settings</a>
+        <button type="button" class="btn btn-secondary" id="btn-view-queue">View queue</button>
+        <button type="button" class="btn btn-ghost" id="btn-clear-queue">Clear queue</button>
+        <button type="button" class="btn btn-danger" id="btn-delete">Delete queued…</button>
+      </div>
+    </header>
+
+    <aside class="group-rail">
+      <div class="rail-filters">
+        <label class="field compact">
+          <span>Min confidence</span>
+          <input type="number" id="min-conf" value="85" min="50" max="100" />
+        </label>
+        <label class="field compact">
+          <span>Players per row</span>
+          <input type="number" id="per-row" value="3" min="1" max="8" />
+        </label>
+        <label class="check">
+          <input type="checkbox" id="unreviewed-only" checked />
+          Unreviewed only
+        </label>
+        <input class="filter-input" id="path-filter" type="search" placeholder="Filter path…" />
+      </div>
+      <ul class="group-list" id="group-list"></ul>
+    </aside>
+
+    <section class="group-main" id="group-main">
+      <div class="group-header">
+        <div>
+          <h1 id="title">Select a group</h1>
+          <p class="muted" id="subtitle">Matches appear after you run fingerprint + find duplicates.</p>
+        </div>
+        <div class="row gap">
+          <button type="button" class="btn btn-ghost" id="btn-play-all" disabled>Play all</button>
+          <button type="button" class="btn btn-ghost" id="btn-pause-all" disabled>Pause all</button>
+          <button type="button" class="btn btn-ghost" id="btn-skip" disabled>Skip</button>
+          <button type="button" class="btn btn-secondary" id="btn-reviewed" disabled>Mark reviewed</button>
+        </div>
+      </div>
+
+      <div class="member-grid" id="member-grid" style="--player-cols: 3"></div>
+    </section>
+  </div>
+
+  <div class="modal hidden" id="queue-modal" aria-hidden="true">
+    <div class="modal-backdrop" data-close-modal></div>
+    <div class="modal-panel" role="dialog" aria-labelledby="queue-title">
+      <div class="modal-header">
+        <h2 id="queue-title">Delete queue</h2>
+        <button type="button" class="icon-btn" data-close-modal title="Close">×</button>
+      </div>
+      <div class="modal-body">
+        <p class="muted small" id="queue-summary">—</p>
+        <ul class="queue-list" id="queue-list"></ul>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-ghost" data-close-modal>Close</button>
+        <button type="button" class="btn btn-ghost" id="btn-clear-from-modal">Clear queue</button>
+        <button type="button" class="btn btn-danger" id="btn-delete-from-modal">Delete queued…</button>
+      </div>
+    </div>
+  </div>
+
+  <script type="module">
+    import { api, watchJob, formatBytes, formatDuration, pct } from "./api.js";
+
+    const state = {
+      groups: [],
+      activeId: null,
+      detail: null,
+      perRow: Number(localStorage.getItem("perRow") || 3),
+    };
+
+    const $ = (id) => document.getElementById(id);
+
+    function escapeHtml(s) {
+      return String(s)
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;");
+    }
+
+    function applyPerRow() {
+      const n = Math.max(1, Math.min(8, Number($("per-row").value) || 3));
+      state.perRow = n;
+      $("per-row").value = String(n);
+      localStorage.setItem("perRow", String(n));
+      $("member-grid").style.setProperty("--player-cols", String(n));
+    }
+
+    async function loadGroups() {
+      const minConfidence = Number($("min-conf").value) || 0;
+      const unreviewed = $("unreviewed-only").checked ? "1" : "0";
+      const path = $("path-filter").value.trim();
+      const q = new URLSearchParams({ minConfidence, unreviewed, path });
+      state.groups = await api(`/groups?${q}`);
+      $("group-count").textContent = String(state.groups.length);
+      const stats = await api("/stats");
+      $("group-meta").textContent = `/ ${stats.groups} total · queued ${stats.queuedDeletes}`;
+      $("btn-delete").textContent = `Delete queued (${stats.queuedDeletes})…`;
+      $("btn-view-queue").textContent = `View queue (${stats.queuedDeletes})`;
+
+      $("group-list").innerHTML = state.groups
+        .map(
+          (g) => `
+        <li class="group-item ${g.id === state.activeId ? "active" : ""}" data-id="${g.id}">
+          <div class="group-item-top">
+            <strong>#${g.id}</strong>
+            <span class="conf">${Math.round(g.confidence * 100)}%</span>
+          </div>
+          <div class="group-item-meta">
+            ${g.member_count} files · ${formatBytes(g.reclaimable_bytes)} waste
+          </div>
+        </li>`
+        )
+        .join("");
+    }
+
+    function renderMembers(g) {
+      const grid = $("member-grid");
+      grid.innerHTML = (g.members || [])
+        .map((m) => {
+          const name = m.path.split(/[/\\]/).pop();
+          const res = m.width && m.height ? `${m.width}×${m.height}` : "—";
+          const queued = !!m.queued_delete;
+          return `
+          <article class="member-card ${queued ? "is-queued" : ""} ${m.is_keep ? "is-keep" : ""}" data-file="${m.file_id}">
+            <div class="member-stage">
+              <video controls preload="metadata" src="/api/media/${m.file_id}"></video>
+            </div>
+            <div class="member-meta">
+              <div class="member-name mono" title="${escapeHtml(m.path)}">${escapeHtml(name)}</div>
+              <div class="muted small">
+                ${escapeHtml(m.ext)} · ${formatDuration(m.duration_sec)} · ${formatBytes(m.size)} · ${res}
+              </div>
+              <div class="member-path muted mono" title="${escapeHtml(m.path)}">${escapeHtml(m.path)}</div>
+            </div>
+            <div class="member-actions">
+              <button
+                type="button"
+                class="btn ${queued ? "btn-secondary" : "btn-danger"} btn-block"
+                data-toggle-delete="${m.file_id}"
+              >${queued ? "Remove from queue" : "Add to queue"}</button>
+            </div>
+          </article>`;
+        })
+        .join("");
+    }
+
+    async function openGroup(id) {
+      state.activeId = id;
+      state.detail = await api(`/groups/${id}`);
+      const g = state.detail;
+      $("title").textContent = `Group #${g.id}`;
+      $("subtitle").innerHTML =
+        `${g.member_count} files · <strong class="ok">${Math.round(g.confidence * 100)}%</strong> match · ${formatBytes(g.reclaimable_bytes)} reclaimable`;
+      $("btn-skip").disabled = false;
+      $("btn-reviewed").disabled = false;
+      $("btn-play-all").disabled = false;
+      $("btn-pause-all").disabled = false;
+      renderMembers(g);
+      document.querySelectorAll(".group-item").forEach((el) => {
+        el.classList.toggle("active", Number(el.dataset.id) === id);
+      });
+    }
+
+    $("group-list").addEventListener("click", (e) => {
+      const item = e.target.closest(".group-item");
+      if (!item) return;
+      openGroup(Number(item.dataset.id)).catch(showErr);
+    });
+
+    $("member-grid").addEventListener("click", async (e) => {
+      const btn = e.target.closest("[data-toggle-delete]");
+      if (!btn || !state.activeId) return;
+      const fileId = Number(btn.dataset.toggleDelete);
+      const member = state.detail?.members?.find((m) => m.file_id === fileId);
+      const next = !member?.queued_delete;
+      btn.disabled = true;
+      try {
+        await api(`/groups/${state.activeId}`, {
+          method: "PATCH",
+          body: JSON.stringify({ fileId, queuedDelete: next }),
+        });
+        await openGroup(state.activeId);
+        await loadGroups();
+      } catch (err) {
+        showErr(err);
+      } finally {
+        btn.disabled = false;
+      }
+    });
+
+    $("btn-play-all").addEventListener("click", () => {
+      $("member-grid").querySelectorAll("video").forEach((v) => v.play().catch(() => {}));
+    });
+    $("btn-pause-all").addEventListener("click", () => {
+      $("member-grid").querySelectorAll("video").forEach((v) => v.pause());
+    });
+
+    $("btn-reviewed").addEventListener("click", async () => {
+      if (!state.activeId) return;
+      await api(`/groups/${state.activeId}`, {
+        method: "PATCH",
+        body: JSON.stringify({ reviewed: true }),
+      });
+      await loadGroups();
+      pickNext();
+    });
+
+    $("btn-skip").addEventListener("click", () => pickNext());
+
+    function pickNext() {
+      const idx = state.groups.findIndex((g) => g.id === state.activeId);
+      const next = state.groups[idx + 1] || state.groups[0];
+      if (next) openGroup(next.id);
+    }
+
+    function openQueueModal() {
+      $("queue-modal").classList.remove("hidden");
+      $("queue-modal").setAttribute("aria-hidden", "false");
+      refreshQueueModal().catch(showErr);
+    }
+
+    function closeQueueModal() {
+      $("queue-modal").classList.add("hidden");
+      $("queue-modal").setAttribute("aria-hidden", "true");
+    }
+
+    async function refreshQueueModal() {
+      const queued = await api("/queued-deletes");
+      const bytes = queued.reduce((s, r) => s + (r.size || 0), 0);
+      $("queue-summary").textContent = queued.length
+        ? `${queued.length} files · ${formatBytes(bytes)}`
+        : "Queue is empty.";
+      $("queue-list").innerHTML = queued.length
+        ? queued
+            .map(
+              (r) => `
+          <li class="queue-item">
+            <div>
+              <div class="mono small" title="${escapeHtml(r.path)}">${escapeHtml(r.path)}</div>
+              <div class="muted small">group #${r.group_id} · ${formatBytes(r.size)}</div>
+            </div>
+            <button type="button" class="btn btn-tiny" data-unqueue-group="${r.group_id}" data-unqueue-file="${r.file_id}">Remove</button>
+          </li>`
+            )
+            .join("")
+        : `<li class="muted">Nothing queued.</li>`;
+    }
+
+    $("btn-view-queue").addEventListener("click", openQueueModal);
+    $("queue-modal").addEventListener("click", (e) => {
+      if (e.target.closest("[data-close-modal]")) closeQueueModal();
+    });
+
+    $("queue-list").addEventListener("click", async (e) => {
+      const btn = e.target.closest("[data-unqueue-file]");
+      if (!btn) return;
+      const groupId = Number(btn.dataset.unqueueGroup);
+      const fileId = Number(btn.dataset.unqueueFile);
+      await api(`/groups/${groupId}`, {
+        method: "PATCH",
+        body: JSON.stringify({ fileId, queuedDelete: false }),
+      });
+      await refreshQueueModal();
+      await loadGroups();
+      if (state.activeId === groupId) await openGroup(groupId);
+    });
+
+    async function runDeleteQueued() {
+      const queued = await api("/queued-deletes");
+      if (!queued.length) {
+        alert("Nothing queued.");
+        return;
+      }
+      const bytes = queued.reduce((s, r) => s + (r.size || 0), 0);
+      if (
+        !confirm(
+          `Move ${queued.length} files (${formatBytes(bytes)}) to the trash folder?\n\nThis is a soft-delete (rename), not permanent wipe.`
+        )
+      ) {
+        return;
+      }
+      closeQueueModal();
+      const job = await api("/jobs/delete", { method: "POST" });
+      $("job-pill").textContent = `delete: ${job.status}`;
+      watchJob(job.id, {
+        onUpdate: (j) => {
+          $("job-pill").textContent = `delete: ${j.status} ${pct(j.progress)}`;
+        },
+        onDone: async () => {
+          await loadGroups();
+          if (state.activeId) await openGroup(state.activeId);
+        },
+        onError: (j) => alert(j.error || "delete failed"),
+      });
+    }
+
+    async function clearQueue() {
+      const queued = await api("/queued-deletes");
+      if (!queued.length) {
+        alert("Queue is already empty.");
+        return;
+      }
+      if (!confirm(`Clear ${queued.length} file(s) from the delete queue?`)) return;
+      await api("/queued-deletes/clear", { method: "POST" });
+      await loadGroups();
+      if (state.activeId) await openGroup(state.activeId);
+      if (!$("queue-modal").classList.contains("hidden")) {
+        await refreshQueueModal();
+      }
+    }
+
+    $("btn-delete").addEventListener("click", () => runDeleteQueued().catch(showErr));
+    $("btn-delete-from-modal").addEventListener("click", () =>
+      runDeleteQueued().catch(showErr)
+    );
+    $("btn-clear-queue").addEventListener("click", () => clearQueue().catch(showErr));
+    $("btn-clear-from-modal").addEventListener("click", () =>
+      clearQueue().catch(showErr)
+    );
+
+    function showErr(err) {
+      alert(err.message || String(err));
+    }
+
+    $("per-row").value = String(state.perRow);
+    applyPerRow();
+    $("per-row").addEventListener("change", applyPerRow);
+
+    ["min-conf", "unreviewed-only", "path-filter"].forEach((id) => {
+      $(id).addEventListener("change", () => loadGroups().catch(showErr));
+      $(id).addEventListener("keyup", (e) => {
+        if (e.key === "Enter") loadGroups().catch(showErr);
+      });
+    });
+
+    loadGroups()
+      .then(() => {
+        if (state.groups[0]) return openGroup(state.groups[0].id);
+      })
+      .catch(showErr);
+  </script>
+</body>
+</html>

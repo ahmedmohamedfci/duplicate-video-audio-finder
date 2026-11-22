@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Duplicate Finder</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <main class="settings">
+    <section class="panel">
+      <div class="section-body">
+        <h1 style="margin: 0 0 8px; font-size: 20px">Duplicate Finder</h1>
+        <p class="muted" style="margin-top: 0">
+          Find near-duplicate video/audio by middle-segment audio fingerprint.
+          Long jobs run in the background — the UI never blocks.
+        </p>
+        <div class="row gap" style="margin-top: 16px">
+          <a class="btn btn-primary" href="settings.html">Settings &amp; scan</a>
+          <a class="btn btn-secondary" href="groups.html">Review groups</a>
+        </div>
+        <p id="health" class="muted small" style="margin-top: 16px">Checking tools…</p>
+      </div>
+    </section>
+  </main>
+  <script type="module">
+    import { api } from "./api.js";
+    const el = document.getElementById("health");
+    api("/health")
+      .then((h) => {
+        if (h.tools?.ok) {
+          el.innerHTML = `<span class="ok">ffmpeg + fpcalc found</span>`;
+        } else {
+          el.textContent = `Missing on PATH: ${(h.tools?.missing || []).join(", ")}. Install ffmpeg and chromaprint (fpcalc).`;
+        }
+      })
+      .catch((e) => {
+        el.textContent = `API not reachable: ${e.message}. Run npm start.`;
+      });
+  </script>
+</body>
+</html>

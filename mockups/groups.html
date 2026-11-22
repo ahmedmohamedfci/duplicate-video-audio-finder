@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Duplicate Finder — Groups</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div class="app groups-layout">
+    <header class="topbar">
+      <div class="top-meta">
+        <span class="eyebrow">Groups</span>
+        <strong>142</strong>
+        <span class="muted">/ 1,840 unreviewed</span>
+        <span class="pill">settings saved</span>
+      </div>
+      <div class="row gap">
+        <a class="btn btn-ghost" href="settings.html">Settings</a>
+        <button type="button" class="btn btn-secondary">Bulk actions</button>
+        <button type="button" class="btn btn-danger">Delete queued (27)…</button>
+      </div>
+    </header>
+
+    <aside class="group-rail">
+      <div class="rail-filters">
+        <label class="field compact">
+          <span>Min confidence</span>
+          <input type="number" value="85" min="50" max="100" />
+        </label>
+        <label class="check">
+          <input type="checkbox" checked />
+          Unreviewed only
+        </label>
+        <input class="filter-input" type="search" placeholder="Filter path…" />
+      </div>
+
+      <ul class="group-list" id="group-list">
+        <!-- filled by script -->
+      </ul>
+    </aside>
+
+    <section class="group-main">
+      <div class="group-header">
+        <div>
+          <h1>Group #47</h1>
+          <p class="muted">
+            3 files · <strong class="ok">96%</strong> match · offset
+            <strong>+4.2s</strong> · ~1.1 GB reclaimable
+          </p>
+        </div>
+        <div class="row gap">
+          <button type="button" class="btn btn-ghost">Skip</button>
+          <button type="button" class="btn btn-secondary">Mark reviewed</button>
+          <button type="button" class="btn btn-primary">Queue deletes</button>
+        </div>
+      </div>
+
+      <div class="table-wrap">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>Keep</th>
+              <th>Path</th>
+              <th>Ext</th>
+              <th>Duration</th>
+              <th>Size</th>
+              <th>Res</th>
+              <th>Offset</th>
+              <th>Play</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr class="keep-row selected-row">
+              <td><input type="radio" name="keep" checked title="Keep this file" /></td>
+              <td class="path-cell" title="D:\media\archives\shows\ep12_full.mkv">
+                D:\media\archives\shows\ep12_full.mkv
+              </td>
+              <td>.mkv</td>
+              <td>42:18</td>
+              <td>1.42 GB</td>
+              <td>1920×1080</td>
+              <td>0.0s</td>
+              <td class="play-cells">
+                <button type="button" class="btn btn-tiny" data-play="a">A</button>
+                <button type="button" class="btn btn-tiny" data-play="b">B</button>
+              </td>
+            </tr>
+            <tr class="dup-row">
+              <td><input type="radio" name="keep" title="Keep this file" /></td>
+              <td class="path-cell" title="D:\media\downloads\ep12_webrip.mp4">
+                D:\media\downloads\ep12_webrip.mp4
+              </td>
+              <td>.mp4</td>
+              <td>42:14</td>
+              <td>620 MB</td>
+              <td>1280×720</td>
+              <td>+4.2s</td>
+              <td class="play-cells">
+                <button type="button" class="btn btn-tiny" data-play="a">A</button>
+                <button type="button" class="btn btn-tiny active" data-play="b">B</button>
+              </td>
+            </tr>
+            <tr class="dup-row">
+              <td><input type="radio" name="keep" title="Keep this file" /></td>
+              <td class="path-cell" title="E:\backup\videos\ep12_mirror.mp4">
+                E:\backup\videos\ep12_mirror.mp4
+              </td>
+              <td>.mp4</td>
+              <td>42:18</td>
+              <td>510 MB</td>
+              <td>1280×720</td>
+              <td>0.0s</td>
+              <td class="play-cells">
+                <button type="button" class="btn btn-tiny" data-play="a">A</button>
+                <button type="button" class="btn btn-tiny" data-play="b">B</button>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="players">
+        <div class="player-card">
+          <div class="player-label">
+            <span>Player A — keep candidate</span>
+            <span class="muted mono">ep12_full.mkv</span>
+          </div>
+          <div class="player-stage">
+            <div class="fake-video">
+              <span>Video / audio preview</span>
+              <span class="muted small">Mock — real files play here later</span>
+            </div>
+          </div>
+          <div class="player-controls">
+            <button type="button" class="btn btn-tiny">▶</button>
+            <input type="range" min="0" max="100" value="12" />
+            <span class="mono muted">05:04 / 42:18</span>
+          </div>
+        </div>
+
+        <div class="player-card">
+          <div class="player-label">
+            <span>Player B — compare</span>
+            <span class="muted mono">ep12_webrip.mp4 · starts +4.2s later</span>
+          </div>
+          <div class="player-stage">
+            <div class="fake-video">
+              <span>Video / audio preview</span>
+              <span class="muted small">Same scene after intro offset</span>
+            </div>
+          </div>
+          <div class="player-controls">
+            <button type="button" class="btn btn-tiny">▶</button>
+            <input type="range" min="0" max="100" value="11" />
+            <span class="mono muted">00:48 / 42:14</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="compare-bar">
+        <button type="button" class="btn btn-primary">Play both synced</button>
+        <button type="button" class="btn btn-secondary">Jump to overlap</button>
+        <span class="muted small">
+          Use this to confirm it is the same audio before queuing deletes.
+        </span>
+      </div>
+    </section>
+  </div>
+
+  <script>
+    const groups = [
+      { id: 47, files: 3, conf: 96, waste: "1.1 GB", active: true },
+      { id: 48, files: 2, conf: 94, waste: "420 MB" },
+      { id: 49, files: 4, conf: 91, waste: "2.4 GB" },
+      { id: 52, files: 2, conf: 89, waste: "180 MB" },
+      { id: 61, files: 3, conf: 88, waste: "900 MB" },
+      { id: 77, files: 2, conf: 87, waste: "55 MB" },
+      { id: 88, files: 5, conf: 86, waste: "3.1 GB" },
+      { id: 102, files: 2, conf: 85, waste: "12 MB" },
+    ];
+
+    const list = document.getElementById("group-list");
+    list.innerHTML = groups
+      .map(
+        (g) => `
+      <li class="group-item ${g.active ? "active" : ""}">
+        <div class="group-item-top">
+          <strong>#${g.id}</strong>
+          <span class="conf">${g.conf}%</span>
+        </div>
+        <div class="group-item-meta">
+          ${g.files} files · ${g.waste} waste
+        </div>
+      </li>`
+      )
+      .join("");
+
+    list.addEventListener("click", (e) => {
+      const item = e.target.closest(".group-item");
+      if (!item) return;
+      list.querySelectorAll(".group-item").forEach((el) => el.classList.remove("active"));
+      item.classList.add("active");
+    });
+
+    document.querySelectorAll('input[name="keep"]').forEach((radio) => {
+      radio.addEventListener("change", () => {
+        document.querySelectorAll("tbody tr").forEach((tr) => tr.classList.remove("selected-row", "keep-row"));
+        const tr = radio.closest("tr");
+        tr.classList.add("selected-row", "keep-row");
+        tr.classList.remove("dup-row");
+        document.querySelectorAll("tbody tr").forEach((row) => {
+          if (row !== tr) row.classList.add("dup-row");
+        });
+      });
+    });
+  </script>
+</body>
+</html>

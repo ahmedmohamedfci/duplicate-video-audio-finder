@@ -67,7 +67,7 @@
       <section class="panel" id="match">
         <button type="button" class="section-toggle" aria-expanded="true">
           <span>Fingerprint &amp; match</span>
-          <span class="muted">middle 60% · ≥3 min</span>
+          <span class="muted">center window · ≥3 min</span>
         </button>
         <div class="section-body">
           <div class="grid-2">
@@ -84,15 +84,15 @@
               <input type="number" id="min_confidence" value="85" min="50" max="100" />
             </label>
             <label class="field">
-              <span>Middle window</span>
-              <input type="text" id="middle_window" value="20% → 80%" disabled />
+              <span>Center window (sec)</span>
+              <input type="number" id="fp_window_sec" value="60" min="15" max="600" step="5" />
             </label>
           </div>
           <div class="row gap" style="margin-top: 12px">
             <button type="button" class="btn btn-primary" id="btn-fingerprint">Run fingerprint</button>
             <button type="button" class="btn btn-secondary" id="btn-match">Find duplicates</button>
           </div>
-          <p class="status-line" id="fp-status">Fingerprints only the middle 60% (skips intro/outro).</p>
+          <p class="status-line" id="fp-status">Fingerprints a center audio window (skips intro/outro).</p>
           <div class="progress"><div class="progress-bar" id="fp-bar" style="width: 0%"></div></div>
           <div class="row gap" style="margin-top: 12px">
             <button type="button" class="btn btn-secondary" id="btn-download-tools">
@@ -187,6 +187,7 @@
           extensions,
           workers: Number($("workers").value),
           min_duration_sec: Number($("min_duration_sec").value),
+          fp_window_sec: Number($("fp_window_sec").value),
           min_confidence: Number($("min_confidence").value),
           trash_dir: $("trash_dir").value.trim(),
         }),
@@ -315,6 +316,7 @@
       $("exts").value = (settings.extensions || []).join("\n");
       $("workers").value = settings.workers ?? 4;
       $("min_duration_sec").value = settings.min_duration_sec ?? 180;
+      $("fp_window_sec").value = settings.fp_window_sec ?? 60;
       $("min_confidence").value = settings.min_confidence ?? 85;
       $("trash_dir").value = settings.trash_dir || "";
       $("tools-status").textContent = health.tools?.ok

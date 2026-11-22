@@ -6,4 +6,5 @@ data/
 tools/bin/
 tools/_tmp/
 *.zip
+release/
 

@@ -4,9 +4,14 @@
   "private": true,
   "description": "Find near-duplicate video/audio files by middle-segment audio fingerprints",
   "type": "module",
+  "bin": {
+    "dupfinder": "./src/server.js"
+  },
   "scripts": {
     "start": "node src/server.js",
-    "dev": "node --watch src/server.js"
+    "dev": "node --watch src/server.js",
+    "package": "powershell -File scripts/make-package.ps1",
+    "tools:download": "powershell -File scripts/download-tools.ps1"
   },
   "engines": {
     "node": ">=22.5"

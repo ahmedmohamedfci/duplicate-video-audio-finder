@@ -22,8 +22,32 @@ npm install
 npm start
 ```
 
-
 Open http://127.0.0.1:3847
+
+### Multiple instances
+
+Each instance needs its **own data folder** (separate DB / settings / trash):
+
+```bat
+dupfinder.cmd --data D:\dup-runs\a
+dupfinder.cmd --data D:\dup-runs\b --port 0
+```
+
+| Flag | Meaning |
+|---|---|
+| `--data`, `-d` | Data directory |
+| `--port`, `-p` | Port (default `3847`; `0` = any free port). If busy, next free port is used |
+| `--host` | Listen address (default `127.0.0.1`) |
+
+### Portable package
+
+```bat
+npm run package
+```
+
+Creates `release/dupfinder/` (app + deps + `tools/bin`). Copy that folder anywhere; run `dupfinder.cmd --data ...` (Node 22.5+ still required on PATH).
+
+GitHub Actions (`.github/workflows/package.yml`) builds the same Windows zip on push/PR and attaches it to version tags (`v*`) / releases.
 
 ## Non-blocking UI
 

@@ -1,5 +1,6 @@
 node_modules/
 data/
+data-*/
 *.sqlite
 *.sqlite-*
 .DS_Store
@@ -7,4 +8,7 @@ tools/bin/
 tools/_tmp/
 *.zip
 release/
-
+dist/
+.pkg-cache/
+src-tauri/target/
+src-tauri/gen/

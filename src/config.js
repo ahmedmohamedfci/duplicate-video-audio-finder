@@ -3,9 +3,36 @@ import net from "node:net";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-export const ROOT_DIR = path.resolve(__dirname, "..");
-export const PUBLIC_DIR = path.join(ROOT_DIR, "public");
+const here =
+  typeof __dirname !== "undefined"
+    ? __dirname
+    : path.dirname(fileURLToPath(import.meta.url));
+
+/** Set by @yao-pkg/pkg at runtime inside the exe. */
+const isPkg = typeof process.pkg !== "undefined";
+
+/**
+ * UI assets:
+ * - packaged: dist/public next to the bundled entry in the pkg snapshot
+ * - source:   <repo>/public
+ */
+function resolveStaticDir() {
+  const candidates = isPkg
+    ? [path.join(here, "public"), path.join(here, "dist", "public")]
+    : [path.join(here, "..", "public")];
+  for (const c of candidates) {
+    if (fs.existsSync(path.join(c, "index.html"))) return c;
+  }
+  return candidates[0];
+}
+
+export const STATIC_DIR = resolveStaticDir();
+export const BUNDLE_ROOT = isPkg ? here : path.resolve(here, "..");
+
+/** Default data folder: beside the .exe when packaged, else repo root. */
+export const ROOT_DIR = isPkg
+  ? path.dirname(process.execPath)
+  : path.resolve(here, "..");
 
 function parseArgs(argv) {
   const out = {
@@ -33,18 +60,20 @@ if (CLI.help) {
   console.log(`Duplicate Finder
 
 Usage:
+  dupfinder.exe [options]
   node src/server.js [options]
-  dupfinder.cmd [options]
 
 Options:
-  --data, -d <dir>   Data folder (DB, settings, trash). Default: <app>/data
+  --data, -d <dir>   Data folder (DB, settings, trash). Default: <exe-or-app>/data
   --port, -p <n>     Port (default 3847). Use 0 to pick a free port.
   --host <addr>      Listen address (default 127.0.0.1)
   --help, -h         Show help
 
 Examples:
-  dupfinder.cmd --data D:\\dup-runs\\batch-a
-  dupfinder.cmd --data D:\\dup-runs\\batch-b --port 0
+  dupfinder.exe --data D:\\dup-runs\\batch-a
+  dupfinder.exe --data D:\\dup-runs\\batch-b --port 0
+
+Requires ffmpeg, ffprobe, and fpcalc on PATH (not bundled).
 `);
   process.exit(0);
 }
@@ -62,7 +91,6 @@ export const HOST = CLI.host || process.env.DUPFINDER_HOST || "127.0.0.1";
 
 fs.mkdirSync(DATA_DIR, { recursive: true });
 
-/** Resolve a free TCP port. 0 / negative → OS ephemeral; else start from preferred. */
 export function resolvePort(preferred = REQUESTED_PORT) {
   return new Promise((resolve, reject) => {
     const tryListen = (port) => {

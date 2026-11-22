@@ -1,0 +1,28 @@
+[package]
+name = "dupfinder"
+version = "0.1.0"
+description = "Duplicate video/audio finder"
+authors = ["you"]
+edition = "2021"
+
+[lib]
+name = "dupfinder_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+tauri-plugin-opener = "2"
+tauri-plugin-dialog = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+rusqlite = { version = "0.32", features = ["bundled"] }
+uuid = { version = "1", features = ["v4"] }
+rust-embed = "8"
+tiny_http = "0.12"
+parking_lot = "0.12"
+walkdir = "2"
+thiserror = "2"
+rfd = "0.16"

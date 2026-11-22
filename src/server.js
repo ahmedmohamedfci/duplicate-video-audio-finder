@@ -4,9 +4,9 @@ import {
   DATA_DIR,
   DB_PATH,
   HOST,
-  PUBLIC_DIR,
   REQUESTED_PORT,
   ROOT_DIR,
+  STATIC_DIR,
   resolvePort,
 } from "./config.js";
 import "./db.js";
@@ -34,11 +34,11 @@ app.get("/api/instance", (_req, res) => {
 });
 
 app.use("/api", routes);
-app.use(express.static(PUBLIC_DIR));
+app.use(express.static(STATIC_DIR));
 
 app.get("*", (req, res, next) => {
   if (req.path.startsWith("/api")) return next();
-  res.sendFile(path.join(PUBLIC_DIR, "index.html"));
+  res.sendFile(path.join(STATIC_DIR, "index.html"));
 });
 
 const port = await resolvePort(REQUESTED_PORT);

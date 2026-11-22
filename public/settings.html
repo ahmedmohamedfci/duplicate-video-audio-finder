@@ -94,7 +94,13 @@
           </div>
           <p class="status-line" id="fp-status">Fingerprints only the middle 60% (skips intro/outro).</p>
           <div class="progress"><div class="progress-bar" id="fp-bar" style="width: 0%"></div></div>
+          <div class="row gap" style="margin-top: 12px">
+            <button type="button" class="btn btn-secondary" id="btn-download-tools">
+              Download ffmpeg + ffprobe
+            </button>
+          </div>
           <p class="muted small" id="tools-status">Checking tools…</p>
+          <div class="progress"><div class="progress-bar" id="tools-bar" style="width: 0%"></div></div>
         </div>
       </section>
 
@@ -191,7 +197,9 @@
       if (type === "scan") {
         return { statusEl: $("scan-status"), barEl: $("scan-bar") };
       }
-      // fingerprint, match (and anything else progress-like)
+      if (type === "download-tools") {
+        return { statusEl: $("tools-status"), barEl: $("tools-bar") };
+      }
       return { statusEl: $("fp-status"), barEl: $("fp-bar") };
     }
 
@@ -220,6 +228,12 @@
         onDone: async (j) => {
           onUpdate(j);
           await refreshStats();
+          if (j.type === "download-tools") {
+            const health = await api("/health");
+            $("tools-status").textContent = health.tools?.ok
+              ? `Tools OK in ${health.tools.binDir || "data/bin"}`
+              : `Missing: ${(health.tools?.missing || []).join(", ")}`;
+          }
         },
         onError: onUpdate,
       });
@@ -233,22 +247,26 @@
 
       // Reconnect live job (prefer fingerprint/match for the shared slider)
       const preferred =
+        active.find((j) => j.type === "download-tools") ||
         active.find((j) => j.type === "fingerprint") ||
         active.find((j) => j.type === "match") ||
         active.find((j) => j.type === "scan") ||
         active[0];
       if (preferred) attachJob(preferred);
 
-      // Also restore the other panel from latest known job if not the live one
       const lastScan = jobs.find((j) => j.type === "scan");
       const lastFp = jobs.find((j) =>
         ["fingerprint", "match"].includes(j.type)
       );
+      const lastTools = jobs.find((j) => j.type === "download-tools");
       if (lastScan && preferred?.type !== "scan") {
         bindJobUi($("scan-status"), $("scan-bar"))(lastScan);
       }
       if (lastFp && !["fingerprint", "match"].includes(preferred?.type)) {
         bindJobUi($("fp-status"), $("fp-bar"))(lastFp);
+      }
+      if (lastTools && preferred?.type !== "download-tools") {
+        bindJobUi($("tools-status"), $("tools-bar"))(lastTools);
       }
     }
 
@@ -266,6 +284,9 @@
     );
     $("btn-match").addEventListener("click", () =>
       startBackground("/jobs/match", $("fp-status"), $("fp-bar")).catch(showErr)
+    );
+    $("btn-download-tools").addEventListener("click", () =>
+      startBackground("/jobs/download-tools", $("tools-status"), $("tools-bar")).catch(showErr)
     );
 
     $("btn-cancel").addEventListener("click", async () => {
@@ -297,8 +318,8 @@
       $("min_confidence").value = settings.min_confidence ?? 85;
       $("trash_dir").value = settings.trash_dir || "";
       $("tools-status").textContent = health.tools?.ok
-        ? "Tools OK: ffmpeg, ffprobe, fpcalc"
-        : `Missing: ${(health.tools?.missing || []).join(", ")}`;
+        ? `Tools OK (${health.tools.binDir || "PATH"})`
+        : `Missing: ${(health.tools?.missing || []).join(", ")}. Use Download ffmpeg + ffprobe.`;
       await refreshStats();
       await resumeActiveJobs();
     }

@@ -31,7 +31,7 @@
         if (h.tools?.ok) {
           el.innerHTML = `<span class="ok">ffmpeg + fpcalc found</span>`;
         } else {
-          el.textContent = `Missing on PATH: ${(h.tools?.missing || []).join(", ")}. Install ffmpeg and chromaprint (fpcalc).`;
+          el.textContent = `Missing: ${(h.tools?.missing || []).join(", ")}. Open Settings → Download ffmpeg + ffprobe.`;
         }
       })
       .catch((e) => {

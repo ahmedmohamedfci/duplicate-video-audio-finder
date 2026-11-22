@@ -20,41 +20,38 @@ export async function api(path, options = {}) {
 }
 
 /**
- * Start a job (returns immediately) and stream progress via SSE.
- * UI stays interactive — never await the whole job on a single fetch.
+ * Poll job progress (works with the Tauri localhost host; no SSE needed).
  */
 export function watchJob(jobId, { onUpdate, onDone, onError } = {}) {
-  const es = new EventSource(`/api/jobs/${jobId}/events`);
-  es.onmessage = (ev) => {
-    let job;
+  let stopped = false;
+  let timer = null;
+
+  const tick = async () => {
+    if (stopped) return;
     try {
-      job = JSON.parse(ev.data);
+      const job = await api(`/jobs/${jobId}`);
+      onUpdate?.(job);
+      if (job.status === "done" || job.status === "cancelled") {
+        stopped = true;
+        onDone?.(job);
+        return;
+      }
+      if (job.status === "error") {
+        stopped = true;
+        onError?.(job);
+        return;
+      }
     } catch {
-      return;
+      // keep polling briefly while host starts
     }
-    onUpdate?.(job);
-    if (job.status === "done" || job.status === "cancelled") {
-      es.close();
-      onDone?.(job);
-    } else if (job.status === "error") {
-      es.close();
-      onError?.(job);
-    }
+    if (!stopped) timer = setTimeout(tick, 500);
   };
-  es.onerror = () => {
-    // Browser will retry; if job finished, poll once
-    api(`/jobs/${jobId}`)
-      .then((job) => {
-        onUpdate?.(job);
-        if (["done", "error", "cancelled"].includes(job.status)) {
-          es.close();
-          if (job.status === "error") onError?.(job);
-          else onDone?.(job);
-        }
-      })
-      .catch(() => {});
+
+  tick();
+  return () => {
+    stopped = true;
+    if (timer) clearTimeout(timer);
   };
-  return () => es.close();
 }
 
 export function formatBytes(n) {

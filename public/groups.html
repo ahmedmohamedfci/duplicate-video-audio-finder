@@ -135,6 +135,24 @@
         .join("");
     }
 
+    function unloadMedia() {
+      $("member-grid").querySelectorAll("video").forEach((v) => {
+        v.pause();
+        v.removeAttribute("src");
+        delete v.dataset.loaded;
+        v.load();
+      });
+      $("member-grid").innerHTML = "";
+    }
+
+    function ensureMediaSrc(video) {
+      if (!video || video.dataset.loaded === "1") return;
+      const id = video.dataset.mediaId;
+      if (!id) return;
+      video.src = `/api/media/${id}`;
+      video.dataset.loaded = "1";
+    }
+
     function renderMembers(g) {
       const grid = $("member-grid");
       grid.innerHTML = (g.members || [])
@@ -145,7 +163,7 @@
           return `
           <article class="member-card ${queued ? "is-queued" : ""} ${m.is_keep ? "is-keep" : ""}" data-file="${m.file_id}">
             <div class="member-stage">
-              <video controls preload="metadata" src="/api/media/${m.file_id}"></video>
+              <video controls preload="none" data-media-id="${m.file_id}"></video>
             </div>
             <div class="member-meta">
               <div class="member-name mono" title="${escapeHtml(m.path)}">${escapeHtml(name)}</div>
@@ -167,8 +185,15 @@
     }
 
     async function openGroup(id) {
+      unloadMedia();
       state.activeId = id;
+      document.querySelectorAll(".group-item").forEach((el) => {
+        el.classList.toggle("active", Number(el.dataset.id) === id);
+      });
+      $("title").textContent = `Group #${id}`;
+      $("subtitle").textContent = "Loading…";
       state.detail = await api(`/groups/${id}`);
+      if (state.activeId !== id) return; // user switched again
       const g = state.detail;
       $("title").textContent = `Group #${g.id}`;
       $("subtitle").innerHTML =
@@ -178,9 +203,6 @@
       $("btn-play-all").disabled = false;
       $("btn-pause-all").disabled = false;
       renderMembers(g);
-      document.querySelectorAll(".group-item").forEach((el) => {
-        el.classList.toggle("active", Number(el.dataset.id) === id);
-      });
     }
 
     $("group-list").addEventListener("click", (e) => {
@@ -210,8 +232,27 @@
       }
     });
 
+    $("member-grid").addEventListener(
+      "pointerdown",
+      (e) => {
+        const video = e.target.closest("video");
+        if (video) ensureMediaSrc(video);
+      },
+      true
+    );
+    $("member-grid").addEventListener(
+      "play",
+      (e) => {
+        if (e.target?.tagName === "VIDEO") ensureMediaSrc(e.target);
+      },
+      true
+    );
+
     $("btn-play-all").addEventListener("click", () => {
-      $("member-grid").querySelectorAll("video").forEach((v) => v.play().catch(() => {}));
+      $("member-grid").querySelectorAll("video").forEach((v) => {
+        ensureMediaSrc(v);
+        v.play().catch(() => {});
+      });
     });
     $("btn-pause-all").addEventListener("click", () => {
       $("member-grid").querySelectorAll("video").forEach((v) => v.pause());

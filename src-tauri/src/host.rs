@@ -1,10 +1,11 @@
-use std::io::Read;
+use std::fs::File;
+use std::io::{Read, Seek, SeekFrom};
 use std::sync::{Arc, OnceLock};
 
 use rusqlite::params;
 use rust_embed::RustEmbed;
 use serde_json::json;
-use tiny_http::{Header, Method, Response, Server, StatusCode};
+use tiny_http::{Header, Method, Request, Response, Server, StatusCode};
 
 use crate::db::CatalogDb;
 use crate::delete;
@@ -69,6 +70,18 @@ fn run_server(hub: Arc<JobHub>) -> Result<(), String> {
         let url = request.url().to_string();
         let path = url.split('?').next().unwrap_or("/").to_string();
         let query = url.split('?').nth(1).unwrap_or("").to_string();
+
+        // Stream media off the hot path — never buffer whole files in RAM.
+        if matches!(method, Method::Get | Method::Head) && path.starts_with("/api/media/") {
+            let id = path.trim_start_matches("/api/media/");
+            match id.parse::<i64>() {
+                Ok(file_id) => respond_media_stream(request, file_id, method == Method::Head),
+                Err(_) => {
+                    let _ = request.respond(error_json(400, "bad file id"));
+                }
+            }
+            continue;
+        }
 
         let mut body = Vec::new();
         if matches!(method, Method::Post | Method::Put | Method::Patch) {
@@ -335,13 +348,6 @@ fn route(
         (Method::Get, "/api/queued-deletes") => Ok(json_ok(json!(delete::get_queued()?))),
         (Method::Post, "/api/queued-deletes/clear") => Ok(json_ok(delete::clear_queue()?)),
         (Method::Post, "/api/fingerprints/clear") => Ok(json_ok(delete::clear_fingerprints()?)),
-        (Method::Get, p) if p.starts_with("/api/media/") => {
-            let id: i64 = p
-                .trim_start_matches("/api/media/")
-                .parse()
-                .map_err(|_| "bad file id".to_string())?;
-            serve_media(id)
-        }
         (Method::Get, "/") | (Method::Get, "/index.html") => serve_asset("index.html"),
         (Method::Get, p) => {
             let name = p.trim_start_matches('/');
@@ -454,7 +460,7 @@ fn serve_asset(name: &str) -> Result<Response<std::io::Cursor<Vec<u8>>>, String>
     Ok(res)
 }
 
-fn serve_media(id: i64) -> Result<Response<std::io::Cursor<Vec<u8>>>, String> {
+fn media_lookup(id: i64) -> Result<(String, &'static str), String> {
     let db = CatalogDb::open()?;
     let (path, ext): (String, String) = db
         .conn
@@ -464,24 +470,183 @@ fn serve_media(id: i64) -> Result<Response<std::io::Cursor<Vec<u8>>>, String> {
             |r| Ok((r.get(0)?, r.get(1)?)),
         )
         .map_err(|_| "file not found".to_string())?;
-    let bytes = std::fs::read(&path).map_err(|e| e.to_string())?;
     let mime = match ext.to_ascii_lowercase().as_str() {
-        ".mp4" => "video/mp4",
+        ".mp4" | ".m4v" => "video/mp4",
         ".webm" => "video/webm",
         ".mkv" => "video/x-matroska",
+        ".mov" => "video/quicktime",
         ".mp3" => "audio/mpeg",
         ".m4a" => "audio/mp4",
         ".wav" => "audio/wav",
+        ".flac" => "audio/flac",
+        ".ogg" | ".oga" => "audio/ogg",
         _ => "application/octet-stream",
     };
-    let mut res = Response::from_data(bytes);
-    if let Ok(h) = Header::from_bytes("Content-Type", mime) {
-        res.add_header(h);
+    Ok((path, mime))
+}
+
+fn parse_bytes_range(header: &str, file_len: u64) -> Option<(u64, u64)> {
+    let s = header.strip_prefix("bytes=")?.trim();
+    if s.contains(',') {
+        return None; // multi-range not supported
     }
-    if let Ok(h) = Header::from_bytes("Accept-Ranges", "bytes") {
-        res.add_header(h);
+    let (start_s, end_s) = s.split_once('-')?;
+    if start_s.is_empty() {
+        // suffix: bytes=-N
+        let n: u64 = end_s.parse().ok()?;
+        if n == 0 || file_len == 0 {
+            return None;
+        }
+        let n = n.min(file_len);
+        return Some((file_len - n, file_len - 1));
     }
-    Ok(res)
+    let start: u64 = start_s.parse().ok()?;
+    if start >= file_len {
+        return None;
+    }
+    let end = if end_s.is_empty() {
+        file_len - 1
+    } else {
+        end_s.parse::<u64>().ok()?.min(file_len - 1)
+    };
+    if end < start {
+        return None;
+    }
+    Some((start, end))
+}
+
+fn header(name: &str, value: &str) -> Option<Header> {
+    Header::from_bytes(name.as_bytes(), value.as_bytes()).ok()
+}
+
+/// Stream file bytes (optional Range). Never loads the whole file into memory.
+fn respond_media_stream(request: Request, id: i64, head_only: bool) {
+    let (path, mime) = match media_lookup(id) {
+        Ok(v) => v,
+        Err(e) => {
+            let _ = request.respond(error_json(404, &e));
+            return;
+        }
+    };
+    let file = match File::open(&path) {
+        Ok(f) => f,
+        Err(e) => {
+            let _ = request.respond(error_json(500, &format!("open media: {e}")));
+            return;
+        }
+    };
+    let file_len = match file.metadata() {
+        Ok(m) => m.len(),
+        Err(e) => {
+            let _ = request.respond(error_json(500, &e.to_string()));
+            return;
+        }
+    };
+
+    let range_hdr = request
+        .headers()
+        .iter()
+        .find(|h| h.field.equiv("Range"))
+        .map(|h| h.value.as_str().to_string());
+
+    if let Some(range_val) = range_hdr.as_deref() {
+        let Some((start, end)) = parse_bytes_range(range_val, file_len) else {
+            let mut headers = Vec::new();
+            if let Some(h) = header("Content-Type", mime) {
+                headers.push(h);
+            }
+            if let Some(h) = header("Accept-Ranges", "bytes") {
+                headers.push(h);
+            }
+            if let Some(h) = header("Content-Range", &format!("bytes */{file_len}")) {
+                headers.push(h);
+            }
+            let empty: &[u8] = &[];
+            let _ = request.respond(Response::new(StatusCode(416), headers, empty, Some(0), None));
+            return;
+        };
+
+        let content_len = end - start + 1;
+        let Ok(content_len_usize) = usize::try_from(content_len) else {
+            let _ = request.respond(error_json(500, "range too large"));
+            return;
+        };
+        let mut headers = Vec::new();
+        if let Some(h) = header("Content-Type", mime) {
+            headers.push(h);
+        }
+        if let Some(h) = header("Accept-Ranges", "bytes") {
+            headers.push(h);
+        }
+        if let Some(h) = header(
+            "Content-Range",
+            &format!("bytes {start}-{end}/{file_len}"),
+        ) {
+            headers.push(h);
+        }
+        if let Some(h) = header("Content-Length", &content_len.to_string()) {
+            headers.push(h);
+        }
+
+        if head_only {
+            let empty: &[u8] = &[];
+            let _ = request.respond(Response::new(
+                StatusCode(206),
+                headers,
+                empty,
+                Some(content_len_usize),
+                None,
+            ));
+            return;
+        }
+
+        let mut file = file;
+        if let Err(e) = file.seek(SeekFrom::Start(start)) {
+            let _ = request.respond(error_json(500, &format!("seek: {e}")));
+            return;
+        }
+        let limited = file.take(content_len);
+        let _ = request.respond(Response::new(
+            StatusCode(206),
+            headers,
+            limited,
+            Some(content_len_usize),
+            None,
+        ));
+        return;
+    }
+
+    let file_len_usize = usize::try_from(file_len).unwrap_or(usize::MAX);
+    let mut headers = Vec::new();
+    if let Some(h) = header("Content-Type", mime) {
+        headers.push(h);
+    }
+    if let Some(h) = header("Accept-Ranges", "bytes") {
+        headers.push(h);
+    }
+    if let Some(h) = header("Content-Length", &file_len.to_string()) {
+        headers.push(h);
+    }
+
+    if head_only {
+        let empty: &[u8] = &[];
+        let _ = request.respond(Response::new(
+            StatusCode(200),
+            headers,
+            empty,
+            Some(file_len_usize),
+            None,
+        ));
+        return;
+    }
+
+    let _ = request.respond(Response::new(
+        StatusCode(200),
+        headers,
+        file,
+        Some(file_len_usize),
+        None,
+    ));
 }
 
 fn query_param<'a>(query: &'a str, key: &str) -> Option<&'a str> {

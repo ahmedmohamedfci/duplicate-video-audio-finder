@@ -3,12 +3,13 @@ use std::collections::{HashMap, HashSet};
 use rusqlite::params;
 use serde_json::json;
 
-use crate::db::{now_iso, CatalogDb};
+use crate::db::{now_iso, prune_missing_files, CatalogDb};
 use crate::jobs::JobHub;
 use crate::media::{fingerprint_similarity, unpack_fingerprint};
 
 pub fn run_match(hub: &JobHub, job_id: &str) -> Result<serde_json::Value, String> {
     let db = CatalogDb::open()?;
+    let _pruned = prune_missing_files(&db)?;
     let min_duration: f64 = db
         .get_setting("min_duration_sec")?
         .and_then(|s| s.parse().ok())

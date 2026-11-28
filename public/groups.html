@@ -51,6 +51,7 @@
         <div class="row gap">
           <button type="button" class="btn btn-ghost" id="btn-play-all" disabled>Play all</button>
           <button type="button" class="btn btn-ghost" id="btn-pause-all" disabled>Pause all</button>
+          <button type="button" class="btn btn-tiny btn-danger" id="btn-queue-except-keep" disabled title="Queue every member except the keep">Queue all but keep</button>
           <button type="button" class="btn btn-ghost" id="btn-skip" disabled>Skip</button>
           <button type="button" class="btn btn-secondary" id="btn-reviewed" disabled>Mark reviewed</button>
         </div>
@@ -135,11 +136,48 @@
         .join("");
     }
 
+    function mediaSrc(m) {
+      if (/^https?:\/\//i.test(m.path)) return m.path;
+      if (/^\\\\/.test(m.path)) return `/api/media/${m.file_id}`;
+      if (/^[a-zA-Z]:[\\/]/.test(m.path) || m.path.startsWith("/"))
+        return "file:///" + m.path.replace(/\\/g, "/");
+      return `/api/media/${m.file_id}`;
+    }
+
+    function isLazyMediaSrc(src) {
+      return src.startsWith("/api/media/");
+    }
+
+    function applyAllVideos(vid, offset) {
+      if (!vid || vid.dataset.scrubBound === "1") return;
+      vid.dataset.scrubBound = "1";
+      const bind = () => {
+        if (!Number.isFinite(vid.duration) || vid.duration <= 0) return;
+        const skipDuration = vid.duration * (offset / 100);
+        vid.currentTime = skipDuration;
+        vid.addEventListener("mouseenter", () => {
+          vid.play();
+          vid._skipper = setInterval(() => {
+            vid.currentTime += skipDuration;
+          }, 500);
+        });
+        vid.addEventListener("mouseleave", () => {
+          vid.pause();
+          vid.currentTime = skipDuration;
+          clearInterval(vid._skipper);
+        });
+      };
+      if (vid.readyState >= 1) bind();
+      else vid.addEventListener("loadeddata", bind, { once: true });
+    }
+
     function unloadMedia() {
       $("member-grid").querySelectorAll("video").forEach((v) => {
         v.pause();
+        clearInterval(v._skipper);
         v.removeAttribute("src");
         delete v.dataset.loaded;
+        delete v.dataset.scrubBound;
         v.load();
       });
       $("member-grid").innerHTML = "";
@@ -147,28 +185,52 @@
 
     function ensureMediaSrc(video) {
       if (!video || video.dataset.loaded === "1") return;
-      const id = video.dataset.mediaId;
-      if (!id) return;
-      video.src = `/api/media/${id}`;
+      const src = video.dataset.mediaSrc || (video.dataset.mediaId ? `/api/media/${video.dataset.mediaId}` : "");
+      if (!src) return;
+      video.src = src;
       video.dataset.loaded = "1";
+      applyAllVideos(video, 10);
     }
 
     function renderMembers(g) {
+      const members = g.members || [];
+      const names = members.map((m) => m.path.split(/[/\\]/).pop());
+      const nameSame = names.length > 0 && names.every((n) => n === names[0]);
+      const durations = members.map((m) => m.duration_sec);
+      const durSame =
+        durations.length > 0 &&
+        durations.every(
+          (d) => d != null && durations[0] != null && Math.abs(d - durations[0]) <= 0.5
+        );
+      const sizes = members.map((m) => m.size);
+      const sizeSame = sizes.length > 0 && sizes.every((s) => s === sizes[0]);
+
       const grid = $("member-grid");
-      grid.innerHTML = (g.members || [])
+      grid.innerHTML = members
         .map((m) => {
           const name = m.path.split(/[/\\]/).pop();
           const res = m.width && m.height ? `${m.width}×${m.height}` : "—";
           const queued = !!m.queued_delete;
+          const src = mediaSrc(m);
+          const lazy = isLazyMediaSrc(src);
           return `
           <article class="member-card ${queued ? "is-queued" : ""} ${m.is_keep ? "is-keep" : ""}" data-file="${m.file_id}">
             <div class="member-stage">
-              <video controls preload="none" data-media-id="${m.file_id}"></video>
+              <video
+                controls
+                preload="${lazy ? "none" : "metadata"}"
+                data-media-id="${m.file_id}"
+                data-media-src="${escapeHtml(src)}"
+                ${lazy ? "" : `src="${escapeHtml(src)}" data-loaded="1"`}
+              ></video>
             </div>
             <div class="member-meta">
-              <div class="member-name mono" title="${escapeHtml(m.path)}">${escapeHtml(name)}</div>
+              <div class="member-name mono ${nameSame ? "meta-match" : "meta-diff"}" title="${escapeHtml(m.path)}">${escapeHtml(name)}</div>
               <div class="muted small">
-                ${escapeHtml(m.ext)} · ${formatDuration(m.duration_sec)} · ${formatBytes(m.size)} · ${res}
+                ${escapeHtml(m.ext)} ·
+                <span class="${durSame ? "meta-match" : "meta-diff"}">${formatDuration(m.duration_sec)}</span> ·
+                <span class="${sizeSame ? "meta-match" : "meta-diff"}">${formatBytes(m.size)}</span> ·
+                ${res}
               </div>
               <div class="member-path muted mono" title="${escapeHtml(m.path)}">${escapeHtml(m.path)}</div>
             </div>
@@ -182,6 +244,10 @@
           </article>`;
         })
         .join("");
+
+      grid.querySelectorAll("video").forEach((vid) => {
+        if (vid.dataset.loaded === "1") applyAllVideos(vid, 10);
+      });
     }
 
     async function openGroup(id) {
@@ -202,6 +268,7 @@
       $("btn-reviewed").disabled = false;
       $("btn-play-all").disabled = false;
       $("btn-pause-all").disabled = false;
+      $("btn-queue-except-keep").disabled = false;
       renderMembers(g);
     }
 
@@ -255,7 +322,10 @@
       });
     });
     $("btn-pause-all").addEventListener("click", () => {
-      $("member-grid").querySelectorAll("video").forEach((v) => v.pause());
+      $("member-grid").querySelectorAll("video").forEach((v) => {
+        v.pause();
+        clearInterval(v._skipper);
+      });
     });
 
     $("btn-reviewed").addEventListener("click", async () => {
@@ -266,6 +336,31 @@
       });
       await loadGroups();
       pickNext();
+    });
+
+    $("btn-queue-except-keep").addEventListener("click", async () => {
+      if (!state.activeId || !state.detail?.members?.length) return;
+      const members = state.detail.members;
+      const keep =
+        members.find((m) => m.is_keep) ||
+        members.reduce((a, b) => (a.size >= b.size ? a : b));
+      const btn = $("btn-queue-except-keep");
+      btn.disabled = true;
+      try {
+        for (const m of members) {
+          if (m.file_id === keep.file_id || m.queued_delete) continue;
+          await api(`/groups/${state.activeId}`, {
+            method: "PATCH",
+            body: JSON.stringify({ fileId: m.file_id, queuedDelete: true }),
+          });
+        }
+        await openGroup(state.activeId);
+        await loadGroups();
+      } catch (err) {
+        showErr(err);
+      } finally {
+        btn.disabled = !state.activeId;
+      }
     });
 
     $("btn-skip").addEventListener("click", () => pickNext());

@@ -4,11 +4,12 @@ use rusqlite::params;
 use serde_json::json;
 use walkdir::WalkDir;
 
-use crate::db::{now_iso, CatalogDb};
+use crate::db::{now_iso, prune_missing_files, CatalogDb};
 use crate::jobs::JobHub;
 
 pub fn run_scan(hub: &JobHub, job_id: &str) -> Result<serde_json::Value, String> {
     let db = CatalogDb::open()?;
+    let mut removed = prune_missing_files(&db)?;
     let roots_raw = db.get_setting("roots")?.unwrap_or_else(|| "[]".into());
     let exts_raw = db
         .get_setting("extensions")?
@@ -112,8 +113,7 @@ pub fn run_scan(hub: &JobHub, job_id: &str) -> Result<serde_json::Value, String>
         }
     }
 
-    // remove vanished
-    let mut removed = 0i64;
+    // remove vanished (not seen under scanned roots)
     let mut stmt = db
         .conn
         .prepare("SELECT id, path, root FROM files")

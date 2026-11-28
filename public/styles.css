@@ -482,6 +482,14 @@ textarea {
   white-space: nowrap;
 }
 
+.meta-match {
+  color: var(--ok);
+}
+
+.meta-diff {
+  color: #fca5a5;
+}
+
 .member-path {
   font-size: 10px;
   overflow: hidden;

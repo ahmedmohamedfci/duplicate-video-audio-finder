@@ -1,3 +1,5 @@
+use std::path::Path;
+
 use rusqlite::{params, Connection, OptionalExtension};
 
 use crate::paths;
@@ -148,5 +150,29 @@ pub fn now_iso() -> String {
         .map(|d| d.as_secs())
         .unwrap_or(0);
     format!("{secs}")
+}
+
+/// Delete catalog rows whose paths no longer exist on disk (cascades group_members).
+pub fn prune_missing_files(db: &CatalogDb) -> Result<i64, String> {
+    let mut stmt = db
+        .conn
+        .prepare("SELECT id, path FROM files")
+        .map_err(|e| e.to_string())?;
+    let rows: Vec<(i64, String)> = stmt
+        .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))
+        .map_err(|e| e.to_string())?
+        .filter_map(|r| r.ok())
+        .collect();
+    drop(stmt);
+    let mut removed = 0i64;
+    for (id, path) in rows {
+        if !Path::new(&path).exists() {
+            db.conn
+                .execute("DELETE FROM files WHERE id = ?1", params![id])
+                .map_err(|e| e.to_string())?;
+            removed += 1;
+        }
+    }
+    Ok(removed)
 }
 
